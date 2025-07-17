@@ -110,15 +110,25 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchWorldState: function() {
             const territories = localStorage.getItem(this.STORAGE_KEY_TERRITORIES);
             const policies = localStorage.getItem(this.STORAGE_KEY_POLICIES);
+            // 新增产出速率与上次产出时间
+            const now = Date.now();
+            const defaultTerritories = [
+                { id: 't01', owner: '执政官Alpha', name: '中央金融港', type: 'Finance', influence: 95, level: 2, gridPos: 'grid-column: 5; grid-row: 5;', outputRate: 10, lastOutput: now },
+                { id: 't02', owner: '执政官Beta', name: 'AI认知矩阵', type: 'Technology', influence: 98, level: 3, gridPos: 'grid-column: 8; grid-row: 4;', outputRate: 15, lastOutput: now },
+                { id: 't03', owner: 'K. Anderson', name: '文化符号熔炉', type: 'Media', influence: 72, level: 1, gridPos: 'grid-column: 6; grid-row: 2;', outputRate: 7, lastOutput: now },
+                { id: 's01', owner: 'N/A', name: '思想奇点', type: 'Singularity', influence: 0, level: 0, gridPos: 'grid-column: 3; grid-row: 3;', outputRate: 0, lastOutput: now },
+                { id: 's02', owner: 'N/A', name: '思想奇点', type: 'Singularity', influence: 0, level: 0, gridPos: 'grid-column: 9; grid-row: 7;', outputRate: 0, lastOutput: now },
+                { id: 's03', owner: 'N/A', name: '思想奇点', type: 'Singularity', influence: 0, level: 0, gridPos: 'grid-column: 11; grid-row: 2;', outputRate: 0, lastOutput: now },
+            ];
+            let terrs = territories ? JSON.parse(territories) : defaultTerritories;
+            // 兼容老数据
+            terrs = terrs.map(t => ({
+                ...t,
+                outputRate: t.outputRate !== undefined ? t.outputRate : (t.level > 0 ? t.level * 5 : 0),
+                lastOutput: t.lastOutput || now
+            }));
             return {
-                territories: territories ? JSON.parse(territories) : [
-                    { id: 't01', owner: '执政官Alpha', name: '中央金融港', type: 'Finance', influence: 95, level: 2, gridPos: 'grid-column: 5; grid-row: 5;' },
-                    { id: 't02', owner: '执政官Beta', name: 'AI认知矩阵', type: 'Technology', influence: 98, level: 3, gridPos: 'grid-column: 8; grid-row: 4;' },
-                    { id: 't03', owner: 'K. Anderson', name: '文化符号熔炉', type: 'Media', influence: 72, level: 1, gridPos: 'grid-column: 6; grid-row: 2;' },
-                    { id: 's01', owner: 'N/A', name: '思想奇点', type: 'Singularity', influence: 0, level: 0, gridPos: 'grid-column: 3; grid-row: 3;' },
-                    { id: 's02', owner: 'N/A', name: '思想奇点', type: 'Singularity', influence: 0, level: 0, gridPos: 'grid-column: 9; grid-row: 7;' },
-                    { id: 's03', owner: 'N/A', name: '思想奇点', type: 'Singularity', influence: 0, level: 0, gridPos: 'grid-column: 11; grid-row: 2;' },
-                ],
+                territories: terrs,
                 policies: policies ? JSON.parse(policies) : []
             };
         },
@@ -237,10 +247,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const terrEl = document.createElement('div');
             terrEl.className = `territory relative w-full h-full flex items-center justify-center rounded-lg ${TYPE_COLORS[terr.type]}`;
             terrEl.style.cssText = terr.gridPos;
-            let content = terr.type === 'Singularity' ? `<div class="text-2xl opacity-50">?</div>` : `<div class="text-center"><div class="font-bold text-sm">${terr.name}</div><div class="text-xs opacity-70">${terr.owner}</div></div>`;
+            let content = terr.type === 'Singularity' ? `<div class="text-2xl opacity-50">?</div>` : `<div class="text-center"><div class="font-bold text-sm">${terr.name}</div><div class="text-xs opacity-70">${terr.owner}</div>`;
+            // 动态产出速率展示
             if (terr.level > 0) {
-                 content += `<div class="territory-level">Lv. ${terr.level}</div>`;
+                content += `<div class="territory-level">Lv. ${terr.level}</div>`;
+                content += `<div class="text-xs text-accent/80 mt-1">+${terr.outputRate}/24h</div>`;
             }
+            content += `</div>`;
             terrEl.innerHTML = content;
             if (terr.type === 'Singularity') terrEl.addEventListener('click', () => openCreationModal(terr.id));
             terrEl.addEventListener('mouseenter', () => displayTerritoryInfo(terr));
@@ -317,11 +330,19 @@ document.addEventListener('DOMContentLoaded', () => {
     function displayTerritoryInfo(terr) {
         currentTerritoryId = terr.id;
         infoPlaceholder.classList.add('hidden'); infoText.classList.remove('hidden'); chartContainer.classList.add('hidden'); worldEvents.classList.remove('hidden');
-        
         let upgradeButtonHTML = '';
+        let outputInfoHTML = '';
         if(terr.type !== 'Singularity') {
             const cost = terr.level * 100;
             const canUpgrade = terr.influence >= cost;
+            // 产出速率与倒计时
+            const nextOutput = terr.lastOutput + 24*60*60*1000;
+            const now = Date.now();
+            let remain = Math.max(0, nextOutput - now);
+            let hours = Math.floor(remain / 3600000);
+            let mins = Math.floor((remain % 3600000) / 60000);
+            let secs = Math.floor((remain % 60000) / 1000);
+            outputInfoHTML = `<div class="mt-2 text-xs text-accent/80">产出速率：+${terr.outputRate}/24h<br>下次产出：<span id="outputCountdown">${hours}时${mins}分${secs}秒</span></div>`;
             upgradeButtonHTML = `
                 <div class="mt-4 pt-4 border-t border-accent/20">
                     <p class="text-sm mb-2">疆域等级: ${terr.level}</p>
@@ -331,15 +352,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         }
-
-        infoText.innerHTML = `<h3 class="text-lg text-accent mb-2">${terr.name}</h3><p class="text-sm mb-1"><span class="text-white/60">领主:</span> ${terr.owner}</p><p class="text-sm mb-4"><span class="text-white/60">类型:</span> ${terr.type}</p><div class="w-full bg-gray-700 rounded-full h-2.5 mb-4"><div class="bg-accent h-2.5 rounded-full" style="width: ${terr.influence}%"></div></div><p class="text-xs text-center text-white/60">影响力: ${terr.influence}</p>${upgradeButtonHTML}`;
-        
+        infoText.innerHTML = `<h3 class="text-lg text-accent mb-2">${terr.name}</h3><p class="text-sm mb-1"><span class="text-white/60">领主:</span> ${terr.owner}</p><p class="text-sm mb-4"><span class="text-white/60">类型:</span> ${terr.type}</p><div class="w-full bg-gray-700 rounded-full h-2.5 mb-4"><div class="bg-accent h-2.5 rounded-full" style="width: ${terr.influence}%"></div></div><p class="text-xs text-center text-white/60">影响力: ${terr.influence}</p>${outputInfoHTML}${upgradeButtonHTML}`;
         if (terr.type !== 'Singularity') {
             policyButton.disabled = false;
             policyOwnerInput.value = terr.owner;
             const upgradeButton = document.getElementById('upgradeButton');
             if(upgradeButton) {
                 upgradeButton.addEventListener('click', handleTerritoryUpgrade);
+            }
+            // 启动倒计时刷新
+            if(document.getElementById('outputCountdown')) {
+                let countdownTimer = setInterval(() => {
+                    const now = Date.now();
+                    let remain = Math.max(0, terr.lastOutput + 24*60*60*1000 - now);
+                    let hours = Math.floor(remain / 3600000);
+                    let mins = Math.floor((remain % 3600000) / 60000);
+                    let secs = Math.floor((remain % 60000) / 1000);
+                    document.getElementById('outputCountdown').textContent = `${hours}时${mins}分${secs}秒`;
+                    if(remain <= 0) clearInterval(countdownTimer);
+                }, 1000);
             }
         } else {
             policyButton.disabled = true;
@@ -421,6 +452,31 @@ document.addEventListener('DOMContentLoaded', () => {
     closePolicyModal.addEventListener('click', () => policyModal.classList.add('hidden'));
     policyModal.addEventListener('click', (e) => { if (e.target === policyModal) policyModal.classList.add('hidden'); });
 
+    // 动态影响力产出主循环
+    function processInfluenceOutput() {
+        let changed = false;
+        const now = Date.now();
+        TERRITORIES = TERRITORIES.map(t => {
+            if(t.level > 0 && t.outputRate > 0) {
+                const interval = 24*60*60*1000;
+                if(now - t.lastOutput >= interval) {
+                    const times = Math.floor((now - t.lastOutput) / interval);
+                    changed = true;
+                    return {
+                        ...t,
+                        influence: Math.min(100, t.influence + t.outputRate * times),
+                        lastOutput: t.lastOutput + interval * times
+                    };
+                }
+            }
+            return t;
+        });
+        if(changed) {
+            virtualServer.saveWorldState(TERRITORIES, POLICIES);
+            renderTerritories();
+        }
+    }
+
     function init() {
         const worldState = virtualServer.fetchWorldState();
         TERRITORIES = worldState.territories;
@@ -428,6 +484,8 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSeats();
         renderTerritories();
         renderPolicies();
+        // 启动产出主循环
+        setInterval(processInfluenceOutput, 60000); // 每分钟检查一次
     }
 
     init();

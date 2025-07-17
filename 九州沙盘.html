@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>九州：沙盘 | 战略推演应用 v1.6</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Songti SC', 'STSong', 'serif';
+            background-image: linear-gradient(-180deg, #15140F 0%, #34312C 97%);
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .text-accent { color: #bfa374; }
+        .border-accent { border-color: #bfa374; }
+        .bg-accent { background-color: #bfa374; }
+        .bg-accent-transparent { background-color: rgba(191, 163, 116, 0.1); }
+        .shadow-gold { box-shadow: 0 0 15px rgba(191, 163, 116, 0.3), inset 0 0 5px rgba(191, 163, 116, 0.2); }
+        .tooltip { visibility: hidden; opacity: 0; transition: opacity 0.3s; }
+        .has-tooltip:hover .tooltip { visibility: visible; opacity: 1; }
+        .seat { transition: all 0.3s ease-in-out; }
+        .seat:hover { transform: scale(1.1) rotate(0deg) !important; border-color: #bfa374; box-shadow: 0 0 25px rgba(191, 163, 116, 0.7); }
+        .territory { transition: all 0.3s ease-in-out; cursor: pointer; }
+        .territory:hover { transform: scale(1.05); z-index: 10; }
+        .territory-level {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background-color: rgba(0,0,0,0.5);
+            color: #bfa374;
+            font-size: 0.7rem;
+            font-weight: bold;
+            padding: 1px 5px;
+            border-radius: 4px;
+            border: 1px solid rgba(191, 163, 116, 0.5);
+        }
+        #centerLogo { cursor: pointer; transition: all 0.3s ease-in-out; }
+        #centerLogo:hover { transform: scale(1.05); }
+        .modal-enter { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        #charterContent::-webkit-scrollbar, #policyContent::-webkit-scrollbar, #policyList::-webkit-scrollbar, #infoContent::-webkit-scrollbar { width: 8px; }
+        #charterContent::-webkit-scrollbar-track, #policyContent::-webkit-scrollbar-track, #policyList::-webkit-scrollbar-track, #infoContent::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); border-radius: 10px; }
+        #charterContent::-webkit-scrollbar-thumb, #policyContent::-webkit-scrollbar-thumb, #policyList::-webkit-scrollbar-thumb, #infoContent::-webkit-scrollbar-thumb { background: rgba(191, 163, 116, 0.4); border-radius: 10px; }
+        #charterContent::-webkit-scrollbar-thumb:hover, #policyContent::-webkit-scrollbar-thumb:hover, #policyList::-webkit-scrollbar-thumb:hover, #infoContent::-webkit-scrollbar-thumb:hover { background: rgba(191, 163, 116, 0.6); }
+        .form-input { background-color: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.2); }
+        .form-input:focus { border-color: #bfa374; outline: none; box-shadow: 0 0 10px rgba(191, 163, 116, 0.3); }
+        .spinner { border-top-color: #bfa374; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .policy-btn {
+            padding: 2px 6px;
+            font-size: 0.75rem;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+    </style>
+</head>
+<body class="overflow-hidden">
+
+    <div class="flex h-screen w-screen p-4 md:p-6 lg:p-8 gap-4 md:gap-6 lg:gap-8">
+
+        <!-- Left Panel: Action & Information -->
+        <aside class="w-1/4 lg:w-1/5 h-full flex flex-col gap-4 md:gap-6">
+            <div class="border border-white/10 rounded-lg p-4 flex-shrink-0 bg-black/20 shadow-lg">
+                <h1 class="text-2xl font-bold text-accent">九州：沙盘</h1>
+                <p class="text-sm mt-1">战略推演应用 v1.6 (扩张版)</p>
+            </div>
+            <div id="infoPanel" class="border border-white/10 rounded-lg p-4 flex-grow flex flex-col bg-black/20 shadow-lg overflow-hidden">
+                <h2 class="text-lg text-accent border-b border-accent/20 pb-2 mb-4 flex-shrink-0">世界状态</h2>
+                <div id="infoContent" class="flex-grow overflow-y-auto pr-2">
+                    <p id="infoPlaceholder" class="text-center py-12">悬停于元素上以查看详情</p>
+                    <div id="infoText" class="hidden"></div>
+                    <div id="worldEvents" class="mt-4 border-t border-accent/20 pt-4">
+                        <h3 class="text-md text-accent/80 mb-2">世界事件</h3>
+                        <div id="policyList" class="space-y-3 max-h-48 overflow-y-auto pr-2"></div>
+                    </div>
+                </div>
+                <div id="chartContainer" class="flex-shrink-0 mt-auto border-t border-accent/20 pt-4 hidden">
+                    <h4 class="text-md text-accent/80 mb-2">影响力分布</h4>
+                    <div class="h-48"><canvas id="influenceChartCanvas"></canvas></div>
+                </div>
+                 <button id="policyButton" class="flex-shrink-0 mt-4 w-full py-2 bg-accent-transparent border border-accent/50 text-accent rounded-lg hover:bg-accent hover:text-black transition-colors duration-300 disabled:opacity-50 disabled:cursor-not-allowed" disabled>发布政策</button>
+            </div>
+        </aside>
+
+        <!-- Main Panel: The Sandbox -->
+        <main class="w-3/4 lg:w-4/5 h-full border border-white/10 rounded-lg bg-black/20 shadow-lg relative flex items-center justify-center overflow-hidden">
+            <div id="territoryGrid" class="absolute top-0 left-0 w-full h-full grid grid-cols-12 grid-rows-8 gap-1 p-2 opacity-50"></div>
+            <div id="governanceCircle" class="relative w-[50vh] h-[50vh] lg:w-[60vh] lg:h-[60vh] border-2 border-accent/30 rounded-full flex items-center justify-center">
+                <div id="seatContainer" class="absolute w-full h-full"></div>
+                <div id="centerLogo" class="w-32 h-32 lg:w-40 lg:h-40 bg-black/50 rounded-full flex items-center justify-center text-center border-2 border-accent/50 shadow-gold backdrop-blur-sm">
+                    <div><h3 class="text-xl lg:text-2xl text-accent font-bold">九州</h3><p class="text-xs lg:text-sm text-white/50">点击以阅宪章</p></div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="charterModal" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center hidden z-50"><div id="charterContent" class="w-11/12 md:w-2/3 lg:w-1/2 max-w-4xl h-auto max-h-[80vh] bg-gradient-to-br from-[#15140F] to-[#25221D] border-2 border-accent rounded-lg shadow-2xl shadow-gold p-8 overflow-y-auto modal-enter"><h1 class="text-3xl text-accent text-center mb-6">《九州宪章》</h1><div id="charterText" class="space-y-6 text-white/80"><div><h2 class="text-xl text-accent/80 mb-2">第一章：共生性使命</h2><p>九州不追求预设的终极目标。我们的存在，是为了敏锐地洞察、并以极具创造力的方式，去回应我们时代里最杰出、最富探索精神的个体的深层需求。我们与成员共生，成员的成长定义了我们的边界。</p></div><div><h2 class="text-xl text-accent/80 mb-2">第二章：四大信条</h2><ul class="list-disc list-inside space-y-1"><li><b>绝对诚信:</b> 信任是九州生态的唯一货币。</li><li><b>无尽探索:</b> 我们为探索未知而生，奖励有价值的失败。</li><li><b>底线原则:</b> 当原则与利益冲突时，我们选择原则。</li><li><b>共赢生态:</b> 我们不寻求零和游戏，致力于相互成就。</li></ul></div><div><h2 class="text-xl text-accent/80 mb-2">第三章：成功的定义</h2><p>我们最大的成功，是成员因九州而变得更智慧、更强大。我们以创造的文化印记，而非积累的财富来衡量伟大。我们推崇具备“无尽创造力”与“绝对担当”的九州创造者。</p></div><div><h2 class="text-xl text-accent/80 mb-2">第四章：九州世界观</h2><p>我们视财富为工具，权力为责任。我们信奉“科技向善，人文向美”，科技的终极应与艺术、哲学和爱融为一体。</p></div></div><button id="closeCharterModal" class="absolute top-4 right-4 text-white/50 hover:text-accent transition-colors"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button></div></div>
+    <div id="creationModal" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center hidden z-50"><div class="w-11/12 md:w-1/3 max-w-lg bg-gradient-to-br from-[#15140F] to-[#25221D] border-2 border-accent rounded-lg shadow-2xl shadow-gold p-8 modal-enter"><h1 class="text-3xl text-accent text-center mb-6">开辟新土</h1><form id="creationForm"><input type="hidden" id="singularityId"><div class="mb-4"><label for="territoryName" class="block text-accent/80 mb-2">疆域名号</label><input type="text" id="territoryName" name="territoryName" class="w-full p-2 rounded form-input" required></div><div class="mb-6"><label for="territoryType" class="block text-accent/80 mb-2">疆域属性</label><select id="territoryType" name="territoryType" class="w-full p-2 rounded form-input"><option value="Finance">金融</option><option value="Technology">科技</option><option value="Media">传媒</option><option value="Operations">社群</option><option value="Investment">投资</option></select></div><div class="flex justify-between items-center"><button type="button" id="closeCreationModal" class="py-2 px-4 text-white/70 hover:text-white transition">暂缓</button><button type="submit" id="submitCreation" class="py-2 px-6 bg-accent text-black font-bold rounded hover:opacity-90 transition flex items-center gap-2">确认创世</button></div></form></div></div>
+    <div id="policyModal" class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center hidden z-50"><div class="w-11/12 md:w-1/2 max-w-2xl bg-gradient-to-br from-[#15140F] to-[#25221D] border-2 border-accent rounded-lg shadow-2xl shadow-gold p-8 modal-enter"><h1 class="text-3xl text-accent text-center mb-6">发布政策</h1><form id="policyForm"><input type="hidden" id="policyOwner" name="policyOwner"><div class="mb-4"><label for="policyTitle" class="block text-accent/80 mb-2">政策标题</label><input type="text" id="policyTitle" name="policyTitle" class="w-full p-2 rounded form-input" required></div><div class="mb-4"><label for="policyEffect" class="block text-accent/80 mb-2">政策效果</label><select id="policyEffect" name="policyEffect" class="w-full p-2 rounded form-input"><option value="tech_breakthrough">科技突破</option><option value="capital_injection">资本注入</option><option value="cultural_flourishing">文化繁荣</option></select></div><div class="mb-6"><label for="policyContent" class="block text-accent/80 mb-2">政策内容 (选填)</label><textarea id="policyContent" name="policyContent" rows="6" class="w-full p-2 rounded form-input"></textarea></div><div class="flex justify-between items-center"><button type="button" id="closePolicyModal" class="py-2 px-4 text-white/70 hover:text-white transition">暂缓</button><button type="submit" id="submitPolicy" class="py-2 px-6 bg-accent text-black font-bold rounded hover:opacity-90 transition flex items-center gap-2">昭告九州</button></div></form></div></div>
+
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+
+    const virtualServer = {
+        STORAGE_KEY_TERRITORIES: 'kyushu_sandbox_territories_v1.6',
+        STORAGE_KEY_POLICIES: 'kyushu_sandbox_policies_v1.6',
+        fetchWorldState: function() {
+            const territories = localStorage.getItem(this.STORAGE_KEY_TERRITORIES);
+            const policies = localStorage.getItem(this.STORAGE_KEY_POLICIES);
+            return {
+                territories: territories ? JSON.parse(territories) : [
+                    { id: 't01', owner: '执政官Alpha', name: '中央金融港', type: 'Finance', influence: 95, level: 2, gridPos: 'grid-column: 5; grid-row: 5;' },
+                    { id: 't02', owner: '执政官Beta', name: 'AI认知矩阵', type: 'Technology', influence: 98, level: 3, gridPos: 'grid-column: 8; grid-row: 4;' },
+                    { id: 't03', owner: 'K. Anderson', name: '文化符号熔炉', type: 'Media', influence: 72, level: 1, gridPos: 'grid-column: 6; grid-row: 2;' },
+                    { id: 's01', owner: 'N/A', name: '思想奇点', type: 'Singularity', influence: 0, level: 0, gridPos: 'grid-column: 3; grid-row: 3;' },
+                    { id: 's02', owner: 'N/A', name: '思想奇点', type: 'Singularity', influence: 0, level: 0, gridPos: 'grid-column: 9; grid-row: 7;' },
+                    { id: 's03', owner: 'N/A', name: '思想奇点', type: 'Singularity', influence: 0, level: 0, gridPos: 'grid-column: 11; grid-row: 2;' },
+                ],
+                policies: policies ? JSON.parse(policies) : []
+            };
+        },
+        saveWorldState: function(territories, policies) {
+            localStorage.setItem(this.STORAGE_KEY_TERRITORIES, JSON.stringify(territories));
+            localStorage.setItem(this.STORAGE_KEY_POLICIES, JSON.stringify(policies));
+        },
+        createTerritory: function(currentTerritories, singularityId, newName, newType) {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    if (!newName.trim()) { reject('疆域名号不可为空。'); return; }
+                    const updatedTerritories = currentTerritories.map(terr => 
+                        terr.id === singularityId ? { ...terr, name: newName, type: newType, owner: '新晋领主', influence: 10, level: 1 } : terr
+                    );
+                    resolve(updatedTerritories);
+                }, 800);
+            });
+        },
+        issuePolicy: function(currentPolicies, owner, title, effect) {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    if (!title.trim()) { reject('政策标题不可为空。'); return; }
+                    const newPolicy = { id: `p${Date.now()}`, owner, title, effect, status: 'pending' };
+                    const updatedPolicies = [newPolicy, ...currentPolicies];
+                    resolve(updatedPolicies);
+                }, 800);
+            });
+        },
+        enactPolicy: function(currentTerritories, currentPolicies, policyId) {
+             return new Promise((resolve) => {
+                setTimeout(() => {
+                    let affectedTerritories = [...currentTerritories];
+                    const policy = currentPolicies.find(p => p.id === policyId);
+                    if (!policy) { resolve({territories: affectedTerritories, policies: currentPolicies}); return; }
+                    switch(policy.effect) {
+                        case 'tech_breakthrough': affectedTerritories = affectedTerritories.map(t => t.type === 'Technology' ? {...t, influence: Math.min(100, t.influence + 15)} : t); break;
+                        case 'capital_injection': affectedTerritories = affectedTerritories.map(t => (t.type === 'Finance' || t.type === 'Investment') ? {...t, influence: Math.min(100, t.influence + 10)} : t); break;
+                        case 'cultural_flourishing': affectedTerritories = affectedTerritories.map(t => (t.type === 'Media' || t.type === 'Operations') ? {...t, influence: Math.min(100, t.influence + 12)} : t); break;
+                    }
+                    const updatedPolicies = currentPolicies.map(p => p.id === policyId ? {...p, status: 'enacted'} : p);
+                    resolve({territories: affectedTerritories, policies: updatedPolicies});
+                }, 800);
+            });
+        },
+        upgradeTerritory: function(currentTerritories, territoryId) {
+            return new Promise((resolve, reject) => {
+                setTimeout(() => {
+                    const territory = currentTerritories.find(t => t.id === territoryId);
+                    if (!territory) { reject('疆域不存在。'); return; }
+                    const cost = territory.level * 100;
+                    if (territory.influence < cost) { reject('影响力不足以升级。'); return; }
+                    
+                    const updatedTerritories = currentTerritories.map(t => 
+                        t.id === territoryId ? {...t, influence: t.influence - cost, level: t.level + 1} : t
+                    );
+                    resolve(updatedTerritories);
+                }, 800);
+            });
+        }
+    };
+
+    let TERRITORIES = [];
+    let POLICIES = [];
+    const SEATS = [
+        { id: 1, type: 'Founder', title: '创始之火', description: '确保集团不偏离最初的梦想和核心价值观。' }, { id: 3, type: 'Operations', title: '贤智汇聚', description: '集团的人力资本与社群运营中心。' }, { id: 4, type: 'Investment', title: '日斗投资', description: '集团的对外投资与资产扩张平台。' }, { id: 5, type: 'Finance', title: '聚财众发', description: '集团的内部资本运作与财富管理平台。' }, { id: 6, type: 'Technology', title: '讯飞通', description: '集团的技术研发与数据智能中心。' }, { id: 7, type: 'Media', title: '九州传媒', description: '集团的品牌营销与内容生态中心。' }, { id: 8, type: 'External', title: '外界之贤', description: '引入外部的批判性视角和前沿洞见。' }, { id: 9, type: 'External', title: '外界之贤', description: '引入外部的批判性视角和前沿洞见。' }, { id: 2, type: 'Founder', title: '创始之火', description: '确保集团不偏离最初的梦想和核心价值观。' }
+    ];
+    const TYPE_COLORS = {
+        'Founder': 'bg-yellow-900/50 border-yellow-500/70', 'Operations': 'bg-sky-900/50 border-sky-500/70', 'Investment': 'bg-emerald-900/50 border-emerald-500/70', 'Finance': 'bg-green-900/50 border-green-500/70', 'Technology': 'bg-indigo-900/50 border-indigo-500/70', 'Media': 'bg-purple-900/50 border-purple-500/70', 'External': 'bg-gray-700/50 border-gray-500/70', 'Singularity': 'bg-white/10 border-white/30 animate-pulse'
+    };
+    const EFFECT_NAMES = {
+        'tech_breakthrough': '科技突破', 'capital_injection': '资本注入', 'cultural_flourishing': '文化繁荣'
+    };
+
+    const seatContainer = document.getElementById('seatContainer');
+    const territoryGrid = document.getElementById('territoryGrid');
+    const infoPlaceholder = document.getElementById('infoPlaceholder');
+    const infoText = document.getElementById('infoText');
+    const chartContainer = document.getElementById('chartContainer');
+    const worldEvents = document.getElementById('worldEvents');
+    const policyList = document.getElementById('policyList');
+    const centerLogo = document.getElementById('centerLogo');
+    const charterModal = document.getElementById('charterModal');
+    const closeCharterModal = document.getElementById('closeCharterModal');
+    const creationModal = document.getElementById('creationModal');
+    const closeCreationModal = document.getElementById('closeCreationModal');
+    const creationForm = document.getElementById('creationForm');
+    const singularityIdInput = document.getElementById('singularityId');
+    const policyModal = document.getElementById('policyModal');
+    const closePolicyModal = document.getElementById('closePolicyModal');
+    const policyForm = document.getElementById('policyForm');
+    const policyOwnerInput = document.getElementById('policyOwner');
+    const policyButton = document.getElementById('policyButton');
+
+    let influenceChart = null;
+    let currentTerritoryId = null;
+
+    function renderSeats() {
+        const radius = 40; const angleStep = 360 / SEATS.length;
+        SEATS.forEach((seat, index) => {
+            const angle = angleStep * index - 90;
+            const x = 50 + radius * Math.cos(angle * Math.PI / 180);
+            const y = 50 + radius * Math.sin(angle * Math.PI / 180);
+            const seatEl = document.createElement('div');
+            seatEl.className = `seat absolute w-16 h-16 lg:w-20 lg:h-20 border-2 rounded-full flex items-center justify-center text-center p-1 has-tooltip ${TYPE_COLORS[seat.type]} shadow-md`;
+            seatEl.style.left = `calc(${x}% - 32px)`; seatEl.style.top = `calc(${y}% - 32px)`;
+            seatEl.innerHTML = `<div class="text-xs lg:text-sm text-white/90">${seat.title}</div><div class="tooltip absolute -top-20 w-48 bg-black/80 border border-accent/50 p-2 rounded-lg text-xs backdrop-blur-sm z-20"><h4 class="font-bold text-accent">${seat.title}</h4><p class="text-white/80">${seat.description}</p></div>`;
+            seatEl.addEventListener('mouseenter', () => displaySeatInfo(seat));
+            seatEl.addEventListener('mouseleave', clearInfoPanel);
+            seatContainer.appendChild(seatEl);
+        });
+    }
+
+    function renderTerritories() {
+        territoryGrid.innerHTML = '';
+        TERRITORIES.forEach(terr => {
+            const terrEl = document.createElement('div');
+            terrEl.className = `territory relative w-full h-full flex items-center justify-center rounded-lg ${TYPE_COLORS[terr.type]}`;
+            terrEl.style.cssText = terr.gridPos;
+            let content = terr.type === 'Singularity' ? `<div class="text-2xl opacity-50">?</div>` : `<div class="text-center"><div class="font-bold text-sm">${terr.name}</div><div class="text-xs opacity-70">${terr.owner}</div></div>`;
+            if (terr.level > 0) {
+                 content += `<div class="territory-level">Lv. ${terr.level}</div>`;
+            }
+            terrEl.innerHTML = content;
+            if (terr.type === 'Singularity') terrEl.addEventListener('click', () => openCreationModal(terr.id));
+            terrEl.addEventListener('mouseenter', () => displayTerritoryInfo(terr));
+            terrEl.addEventListener('mouseleave', () => { clearInfoPanel(); policyButton.disabled = true; });
+            territoryGrid.appendChild(terrEl);
+        });
+    }
+
+    function renderPolicies() {
+        policyList.innerHTML = '';
+        if (POLICIES.length === 0) {
+            policyList.innerHTML = `<p class="text-center text-sm text-white/50">暂无世界事件</p>`;
+        } else {
+            POLICIES.forEach(policy => {
+                const policyEl = document.createElement('div');
+                policyEl.className = 'bg-black/20 p-2 rounded border-l-2';
+                let statusBadge, actionButtons;
+                if (policy.status === 'pending') {
+                    policyEl.classList.add('border-accent/50');
+                    statusBadge = `<span class="text-yellow-400/80">[待审议]</span>`;
+                    actionButtons = `<div class="flex gap-2 mt-2">
+                        <button data-id="${policy.id}" class="policy-btn bg-green-800/50 hover:bg-green-700/50 text-white/80 approve-btn">赞成</button>
+                    </div>`;
+                } else {
+                    policyEl.classList.add('border-gray-600');
+                    statusBadge = `<span class="text-gray-500">[已生效]</span>`;
+                    actionButtons = '';
+                }
+                policyEl.innerHTML = `<div class="flex justify-between items-start"><div><p class="font-bold text-white/90">${policy.title}</p><p class="text-white/60 text-xs">效果: ${EFFECT_NAMES[policy.effect]} | 由 ${policy.owner} 提议</p></div>${statusBadge}</div>${actionButtons}`;
+                policyList.append(policyEl);
+            });
+            document.querySelectorAll('.approve-btn').forEach(btn => btn.addEventListener('click', handlePolicyApproval));
+        }
+    }
+
+    async function handlePolicyApproval(e) {
+        const button = e.target;
+        const policyId = button.dataset.id;
+        toggleButtonSpinner(button, true);
+        const { territories, policies } = await virtualServer.enactPolicy(TERRITORIES, POLICIES, policyId);
+        TERRITORIES = territories;
+        POLICIES = policies;
+        virtualServer.saveWorldState(TERRITORIES, POLICIES);
+        renderPolicies();
+        renderTerritories();
+        if(!chartContainer.classList.contains('hidden')) updateInfluenceChart();
+    }
+    
+    async function handleTerritoryUpgrade(e) {
+        const button = e.target;
+        toggleButtonSpinner(button, true);
+        try {
+            const updatedTerritories = await virtualServer.upgradeTerritory(TERRITORIES, currentTerritoryId);
+            TERRITORIES = updatedTerritories;
+            virtualServer.saveWorldState(TERRITORIES, POLICIES);
+            renderTerritories();
+            // Refresh info panel with new data
+            const refreshedTerritory = TERRITORIES.find(t => t.id === currentTerritoryId);
+            displayTerritoryInfo(refreshedTerritory);
+        } catch (error) {
+            alert(error);
+            // Re-enable button on failure
+            toggleButtonSpinner(button, false);
+        }
+    }
+
+    function displaySeatInfo(seat) {
+        currentTerritoryId = null;
+        infoPlaceholder.classList.add('hidden'); infoText.classList.remove('hidden'); chartContainer.classList.remove('hidden'); worldEvents.classList.remove('hidden');
+        infoText.innerHTML = `<h3 class="text-lg text-accent mb-2">${seat.title} (席位)</h3><p class="text-sm">${seat.description}</p>`;
+        updateInfluenceChart();
+    }
+    
+    function displayTerritoryInfo(terr) {
+        currentTerritoryId = terr.id;
+        infoPlaceholder.classList.add('hidden'); infoText.classList.remove('hidden'); chartContainer.classList.add('hidden'); worldEvents.classList.remove('hidden');
+        
+        let upgradeButtonHTML = '';
+        if(terr.type !== 'Singularity') {
+            const cost = terr.level * 100;
+            const canUpgrade = terr.influence >= cost;
+            upgradeButtonHTML = `
+                <div class="mt-4 pt-4 border-t border-accent/20">
+                    <p class="text-sm mb-2">疆域等级: ${terr.level}</p>
+                    <button id="upgradeButton" class="w-full py-2 text-sm rounded transition-colors ${canUpgrade ? 'bg-accent text-black hover:opacity-90' : 'bg-gray-600/50 text-white/50 cursor-not-allowed'}" ${!canUpgrade ? 'disabled' : ''}>
+                        升级 (消耗 ${cost} 影响力)
+                    </button>
+                </div>
+            `;
+        }
+
+        infoText.innerHTML = `<h3 class="text-lg text-accent mb-2">${terr.name}</h3><p class="text-sm mb-1"><span class="text-white/60">领主:</span> ${terr.owner}</p><p class="text-sm mb-4"><span class="text-white/60">类型:</span> ${terr.type}</p><div class="w-full bg-gray-700 rounded-full h-2.5 mb-4"><div class="bg-accent h-2.5 rounded-full" style="width: ${terr.influence}%"></div></div><p class="text-xs text-center text-white/60">影响力: ${terr.influence}</p>${upgradeButtonHTML}`;
+        
+        if (terr.type !== 'Singularity') {
+            policyButton.disabled = false;
+            policyOwnerInput.value = terr.owner;
+            const upgradeButton = document.getElementById('upgradeButton');
+            if(upgradeButton) {
+                upgradeButton.addEventListener('click', handleTerritoryUpgrade);
+            }
+        } else {
+            policyButton.disabled = true;
+        }
+    }
+
+    function clearInfoPanel() {
+        currentTerritoryId = null;
+        infoPlaceholder.classList.remove('hidden'); infoText.classList.add('hidden'); chartContainer.classList.add('hidden');
+    }
+
+    function updateInfluenceChart() {
+        const labels = TERRITORIES.filter(t => t.type !== 'Singularity').map(t => t.name);
+        const data = TERRITORIES.filter(t => t.type !== 'Singularity').map(t => t.influence);
+        if (influenceChart) {
+            influenceChart.data.labels = labels; influenceChart.data.datasets[0].data = data; influenceChart.update();
+        } else {
+            const ctx = document.getElementById('influenceChartCanvas').getContext('2d');
+            influenceChart = new Chart(ctx, {
+                type: 'bar', data: { labels: labels, datasets: [{ label: '疆域影响力', data: data, backgroundColor: 'rgba(191, 163, 116, 0.4)', borderColor: 'rgba(191, 163, 116, 1)', borderWidth: 1 }] },
+                options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', scales: { x: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: 'rgba(255,255,255,0.7)' } }, y: { grid: { display: false }, ticks: { color: 'rgba(255,255,255,0.7)', font: { size: 10 } } } }, plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(0,0,0,0.7)', titleFont: { family: 'Inter, sans-serif' }, bodyFont: { family: 'Inter, sans-serif' } } } }
+            });
+        }
+    }
+
+    function toggleButtonSpinner(button, show) {
+        if (show) {
+            button.disabled = true;
+            button.dataset.originalText = button.innerHTML;
+            button.innerHTML = `<div class="w-4 h-4 border-2 border-transparent rounded-full spinner mx-auto"></div>`;
+        } else {
+            button.disabled = false;
+            if (button.dataset.originalText) button.innerHTML = button.dataset.originalText;
+        }
+    }
+
+    function openCreationModal(singularityId) {
+        creationForm.reset(); singularityIdInput.value = singularityId; creationModal.classList.remove('hidden');
+    }
+
+    creationForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const button = document.getElementById('submitCreation');
+        toggleButtonSpinner(button, true);
+        try {
+            const updatedTerritories = await virtualServer.createTerritory(TERRITORIES, singularityIdInput.value, document.getElementById('territoryName').value, document.getElementById('territoryType').value);
+            TERRITORIES = updatedTerritories;
+            virtualServer.saveWorldState(TERRITORIES, POLICIES);
+            renderTerritories();
+            if(!chartContainer.classList.contains('hidden')) updateInfluenceChart();
+        } catch (error) { alert(error); } finally {
+            toggleButtonSpinner(button, false);
+            creationModal.classList.add('hidden');
+        }
+    });
+
+    policyButton.addEventListener('click', () => { if (!policyButton.disabled) { policyForm.reset(); policyModal.classList.remove('hidden'); } });
+
+    policyForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const button = document.getElementById('submitPolicy');
+        toggleButtonSpinner(button, true);
+        try {
+            const updatedPolicies = await virtualServer.issuePolicy(POLICIES, policyOwnerInput.value, document.getElementById('policyTitle').value, document.getElementById('policyEffect').value);
+            POLICIES = updatedPolicies;
+            virtualServer.saveWorldState(TERRITORIES, POLICIES);
+            renderPolicies();
+        } catch (error) { alert(error); } finally {
+            toggleButtonSpinner(button, false);
+            policyModal.classList.add('hidden');
+        }
+    });
+
+    centerLogo.addEventListener('click', () => charterModal.classList.remove('hidden'));
+    closeCharterModal.addEventListener('click', () => charterModal.classList.add('hidden'));
+    charterModal.addEventListener('click', (e) => { if (e.target === charterModal) charterModal.classList.add('hidden'); });
+    closeCreationModal.addEventListener('click', () => creationModal.classList.add('hidden'));
+    creationModal.addEventListener('click', (e) => { if (e.target === creationModal) creationModal.classList.add('hidden'); });
+    closePolicyModal.addEventListener('click', () => policyModal.classList.add('hidden'));
+    policyModal.addEventListener('click', (e) => { if (e.target === policyModal) policyModal.classList.add('hidden'); });
+
+    function init() {
+        const worldState = virtualServer.fetchWorldState();
+        TERRITORIES = worldState.territories;
+        POLICIES = worldState.policies;
+        renderSeats();
+        renderTerritories();
+        renderPolicies();
+    }
+
+    init();
+});
+</script>
+
+</body>
+</html>
